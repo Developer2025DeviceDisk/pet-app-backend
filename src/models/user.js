@@ -7,9 +7,32 @@ const userSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
+    fullName: {
+      type: String,
+    },
+    email: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
     isVerified: {
       type: Boolean,
       default: false,
+    },
+    otp: {
+      type: String,
+    },
+    otpExpires: {
+      type: Date,
+    },
+    state: {
+      type: String,
+    },
+    city: {
+      type: String,
+    },
+    profileImage: {
+      type: String,
     },
   },
   { timestamps: true }

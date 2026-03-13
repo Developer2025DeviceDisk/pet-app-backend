@@ -1,18 +1,12 @@
 const User = require("../models/user.js");
-const axios = require("axios");
-const jwt = require("jsonwebtoken");
+const { generateToken } = require("../utils/jwt");
 
-// 🔐 Generate JWT
-const generateToken = (user) => {
-  return jwt.sign(
-    { id: user._id, phone: user.phone },
-    process.env.JWT_SECRET,
-    { expiresIn: "7d" }
-  );
+// 🔐 Generate Random 6-digit OTP
+const generateOTP = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-
-// ================= REGISTER =================
+// ================= REGISTER / LOGIN (Unified) =================
 exports.register = async (req, res) => {
   try {
     const { phone } = req.body;
@@ -27,23 +21,20 @@ exports.register = async (req, res) => {
       user = await User.create({ phone });
     }
 
-    // 🔹 Send OTP via MSG91
-    await axios.post(
-      `https://control.msg91.com/api/v5/otp`,
-      {
-        mobile: phone,
-        template_id: process.env.MSG91_TEMPLATE_ID,
-      },
-      {
-        headers: {
-          authkey: process.env.MSG91_AUTH_KEY,
-        },
-      }
-    );
+    // Generate OTP
+    const otp = generateOTP();
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
 
+    user.otp = otp;
+    user.otpExpires = otpExpires;
+    await user.save();
+
+    // In a real app, send OTP via SMS/Email. 
+    // Here, we return it in the response for the app to display.
     res.status(200).json({
       success: true,
-      message: "OTP sent successfully",
+      message: "OTP generated successfully",
+      otp: otp, // RETURNED FOR TESTING
     });
 
   } catch (error) {
@@ -51,75 +42,37 @@ exports.register = async (req, res) => {
   }
 };
 
-// ================= LOGIN =================
-exports.login = async (req, res) => {
-  try {
-    const { phone } = req.body;
-
-    const user = await User.findOne({ phone });
-
-    if (!user) {
-      return res.status(404).json({ message: "User not registered" });
-    }
-
-    // Send OTP
-    await axios.post(
-      `https://control.msg91.com/api/v5/otp`,
-      {
-        mobile: phone,
-        template_id: process.env.MSG91_TEMPLATE_ID,
-      },
-      {
-        headers: {
-          authkey: process.env.MSG91_AUTH_KEY,
-        },
-      }
-    );
-
-    res.status(200).json({
-      success: true,
-      message: "OTP sent for login",
-    });
-
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
+// ================= LOGIN (Legacy endpoint, same logic) =================
+exports.login = exports.register;
 
 // ================= VERIFY OTP =================
 exports.verifyOtp = async (req, res) => {
   try {
     const { phone, otp } = req.body;
 
-    const response = await axios.get(
-      `https://control.msg91.com/api/v5/otp/verify`,
-      {
-        params: {
-          mobile: phone,
-          otp: otp,
-        },
-        headers: {
-          authkey: process.env.MSG91_AUTH_KEY,
-        },
-      }
-    );
+    const user = await User.findOne({
+      phone,
+      otp,
+      otpExpires: { $gt: Date.now() }
+    });
 
-    if (response.data.type === "success") {
-      const user = await User.findOne({ phone });
-
-      user.isVerified = true;
-      await user.save();
-
-      const token = generateToken(user);
-
-      return res.status(200).json({
-        success: true,
-        token,
-        user,
-      });
+    if (!user) {
+      return res.status(400).json({ message: "Invalid or expired OTP" });
     }
 
-    res.status(400).json({ message: "Invalid OTP" });
+    // Clear OTP after verification
+    user.otp = undefined;
+    user.otpExpires = undefined;
+    user.isVerified = true;
+    await user.save();
+
+    const token = generateToken(user._id);
+
+    res.status(200).json({
+      success: true,
+      token,
+      user,
+    });
 
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -131,21 +84,20 @@ exports.resendOtp = async (req, res) => {
   try {
     const { phone } = req.body;
 
-    await axios.post(
-      `https://control.msg91.com/api/v5/otp/retry`,
-      {
-        mobile: phone,
-      },
-      {
-        headers: {
-          authkey: process.env.MSG91_AUTH_KEY,
-        },
-      }
-    );
+    const user = await User.findOne({ phone });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const otp = generateOTP();
+    user.otp = otp;
+    user.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+    await user.save();
 
     res.status(200).json({
       success: true,
       message: "OTP resent successfully",
+      otp: otp,
     });
 
   } catch (error) {
