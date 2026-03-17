@@ -1,6 +1,7 @@
 const Pet = require("../models/pet");
 const Like = require("../models/like");
 const Match = require("../models/match");
+const Dislike = require("../models/dislike");
 
 // Create Pet Profile
 exports.createPetProfile = async (req, res) => {
@@ -45,6 +46,7 @@ exports.getMyPets = async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 };
+
 // Get all pets for discovery (with optional filtering)
 exports.getAllPets = async (req, res) => {
     try {
@@ -52,6 +54,19 @@ exports.getAllPets = async (req, res) => {
 
         // Base query: exclude current user's pets
         let query = { owner: { $ne: req.user.id } };
+
+        // Exclude pets the user has already swiped on (Liked or Disliked)
+        const myLikes = await Like.find({ user: req.user.id }).select('pet');
+        const myDislikes = await Dislike.find({ user: req.user.id }).select('pet');
+
+        const swipedPetIds = [
+            ...myLikes.map(like => like.pet),
+            ...myDislikes.map(dislike => dislike.pet)
+        ];
+
+        if (swipedPetIds.length > 0) {
+            query._id = { $nin: swipedPetIds };
+        }
 
         // Apply filters if provided
         if (breed) {
@@ -162,6 +177,40 @@ exports.likePet = async (req, res) => {
             success: true,
             isMatch: false,
             message: "Pet liked successfully"
+        });
+
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// Dislike a Pet (Ignore profile for future swiping)
+exports.dislikePet = async (req, res) => {
+    try {
+        const { petId, category } = req.body;
+        const userId = req.user._id;
+
+        if (!petId) {
+            return res.status(400).json({ message: "Pet ID is required" });
+        }
+
+        // Create the dislike to hide this pet from future fetch queries
+        try {
+            await Dislike.create({ 
+                user: userId, 
+                pet: petId, 
+                category: category || "Find Mate" // Front-end may not pass category on dislike initially, def fallback
+            });
+        } catch (error) {
+            // If already disliked, silently ignore duplicate key insertions safely
+            if (error.code !== 11000) {
+                throw error;
+            }
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "Pet disliked successfully"
         });
 
     } catch (error) {

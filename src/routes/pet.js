@@ -8,6 +8,6 @@ router.post("/", auth, upload.array("images", 5), petController.createPetProfile
 router.get("/", auth, petController.getAllPets);
 router.get("/my-pets", auth, petController.getMyPets);
 router.post("/like", auth, petController.likePet);
-
+router.post("/dislike", auth, petController.dislikePet);
 
 module.exports = router;
