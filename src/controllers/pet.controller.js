@@ -6,23 +6,44 @@ const Dislike = require("../models/dislike");
 // Create Pet Profile
 exports.createPetProfile = async (req, res) => {
     try {
-        const { petName, breed, gender, age, healthBadge, temperament, goal } = req.body;
+        const { petName, breed, gender, age, healthBadges, healthBadge, temperament, goal } = req.body;
         const ownerId = req.user.id;
+
+        // Validate minimum 2 images (enforced on creation)
+        if (!req.files || req.files.length < 2) {
+            return res.status(400).json({
+                success: false,
+                message: "Please upload at least 2 photos of your pet."
+            });
+        }
+
+        // Parse healthBadges: can be JSON string or comma-separated or array
+        let parsedHealthBadges = [];
+        if (healthBadges) {
+            try {
+                parsedHealthBadges = typeof healthBadges === "string"
+                    ? JSON.parse(healthBadges)
+                    : healthBadges;
+            } catch {
+                parsedHealthBadges = Array.isArray(healthBadges) ? healthBadges : [healthBadges];
+            }
+        } else if (healthBadge) {
+            // backward compat: single badge sent as healthBadge
+            parsedHealthBadges = [healthBadge];
+        }
 
         const petData = {
             petName,
             breed,
             gender,
             age,
-            healthBadge,
+            healthBadges: parsedHealthBadges,
+            healthBadge: parsedHealthBadges[0] || "", // keep legacy field populated
             temperament,
             goal,
             owner: ownerId,
+            images: req.files.map(file => `/uploads/${file.filename}`),
         };
-
-        if (req.files && req.files.length > 0) {
-            petData.images = req.files.map(file => `/uploads/${file.filename}`);
-        }
 
         const pet = await Pet.create(petData);
 
@@ -76,7 +97,11 @@ exports.getAllPets = async (req, res) => {
             query.gender = { $regex: gender, $options: "i" };
         }
         if (healthBadge) {
-            query.healthBadge = { $regex: healthBadge, $options: "i" };
+            // Support matching against both legacy field and new array field
+            query.$or = [
+                { healthBadge: { $regex: healthBadge, $options: "i" } },
+                { healthBadges: { $in: [new RegExp(healthBadge, "i")] } }
+            ];
         }
         if (temperament) {
             query.temperament = { $regex: temperament, $options: "i" };
@@ -84,7 +109,6 @@ exports.getAllPets = async (req, res) => {
 
         // Handle Age Ranges
         if (ageRange) {
-            // ageRange could be "0-2" or "0-2,2-5"
             const ranges = ageRange.split(",");
             const ageQueries = ranges.map(range => {
                 const [min, max] = range.split("-").map(num => parseInt(num));
@@ -132,7 +156,6 @@ exports.likePet = async (req, res) => {
         try {
             await Like.create({ user: userId, pet: petId, category });
         } catch (error) {
-            // If already liked, just continue to check for match
             if (error.code !== 11000) {
                 throw error;
             }
@@ -145,12 +168,10 @@ exports.likePet = async (req, res) => {
         const reciprocalLike = await Like.findOne({
             user: targetPet.owner._id,
             pet: { $in: myPetIds },
-            category: category // Ensure the reciprocal like is for the exact same category
+            category: category
         });
 
         if (reciprocalLike) {
-            // It's a match!
-            // Check if match already exists
             let match = await Match.findOne({
                 users: { $all: [userId, targetPet.owner._id] },
                 pets: { $all: [petId, reciprocalLike.pet] },
@@ -194,15 +215,13 @@ exports.dislikePet = async (req, res) => {
             return res.status(400).json({ message: "Pet ID is required" });
         }
 
-        // Create the dislike to hide this pet from future fetch queries
         try {
-            await Dislike.create({ 
-                user: userId, 
-                pet: petId, 
-                category: category || "Find Mate" // Front-end may not pass category on dislike initially, def fallback
+            await Dislike.create({
+                user: userId,
+                pet: petId,
+                category: category || "Find Mate"
             });
         } catch (error) {
-            // If already disliked, silently ignore duplicate key insertions safely
             if (error.code !== 11000) {
                 throw error;
             }

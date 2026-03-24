@@ -36,14 +36,16 @@ io.on("connection", (socket) => {
 
   socket.on("send_message", async (data) => {
     try {
-      // data: { matchId, senderId, content }
-      const { matchId, senderId, content } = data;
+      // data: { matchId, senderId, content, mediaUrl?, mediaType? }
+      const { matchId, senderId, content, mediaUrl, mediaType } = data;
 
       // Save message to database
       const newMessage = new Message({
         match: matchId,
         sender: senderId,
-        content: content
+        content: content || "",
+        mediaUrl: mediaUrl || null,
+        mediaType: mediaType || null,
       });
       await newMessage.save();
 
@@ -52,9 +54,11 @@ io.on("connection", (socket) => {
         _id: newMessage._id,
         matchId: matchId,
         senderId: senderId,
-        content: content,
-        clientId: data.clientId, // Return clientId for deduplication
-        createdAt: newMessage.createdAt
+        content: content || "",
+        mediaUrl: mediaUrl || null,
+        mediaType: mediaType || null,
+        clientId: data.clientId,
+        createdAt: newMessage.createdAt,
       });
     } catch (error) {
       console.error("Error saving message:", error);

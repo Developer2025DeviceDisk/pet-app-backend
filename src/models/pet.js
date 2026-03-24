@@ -19,8 +19,15 @@ const petSchema = new mongoose.Schema(
             type: String,
             required: true,
         },
+        // Support multiple health badges
+        healthBadges: {
+            type: [String],
+            default: [],
+        },
+        // Legacy single badge (kept for backward compat)
         healthBadge: {
             type: String,
+            default: "",
         },
         temperament: {
             type: String,
