@@ -46,6 +46,19 @@ exports.sendMediaMessage = async (req, res) => {
             mediaType,
         });
 
+        const io = req.app.get("socketio");
+        if (io) {
+            io.to(matchId).emit("receive_message", {
+                _id: message._id,
+                matchId: matchId,
+                senderId: senderId,
+                content: "",
+                mediaUrl: mediaUrl,
+                mediaType: mediaType,
+                createdAt: message.createdAt,
+            });
+        }
+
         res.status(201).json({
             success: true,
             message: {
