@@ -58,6 +58,88 @@ exports.createPetProfile = async (req, res) => {
     }
 };
 
+// Update Pet Profile
+exports.updatePetProfile = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const ownerId = req.user.id;
+        const { petName, breed, gender, age, healthBadges, healthBadge, temperament, goal, existingImages } = req.body;
+
+        // Verify pet exists and belongs to user
+        const pet = await Pet.findById(id);
+        if (!pet) {
+            return res.status(404).json({ success: false, message: "Pet not found" });
+        }
+        if (pet.owner.toString() !== ownerId) {
+            return res.status(403).json({ success: false, message: "Not authorized to update this pet" });
+        }
+
+        // Parse healthBadges
+        let parsedHealthBadges = [];
+        if (healthBadges) {
+            try {
+                parsedHealthBadges = typeof healthBadges === "string"
+                    ? JSON.parse(healthBadges)
+                    : healthBadges;
+            } catch {
+                parsedHealthBadges = Array.isArray(healthBadges) ? healthBadges : [healthBadges];
+            }
+        } else if (healthBadge) {
+            parsedHealthBadges = [healthBadge];
+        } else {
+            parsedHealthBadges = pet.healthBadges;
+        }
+
+        // Parse existingImages from frontend
+        let parsedExistingImages = [];
+        if (existingImages) {
+            try {
+                parsedExistingImages = JSON.parse(existingImages);
+            } catch {
+                parsedExistingImages = [existingImages];
+            }
+        }
+
+        // Combine existing and new images
+        const newImages = req.files ? req.files.map(file => `/uploads/${file.filename}`) : [];
+        const combinedImages = [...parsedExistingImages, ...newImages];
+
+        // Ensure minimum 2 images total
+        if (combinedImages.length < 2) {
+            return res.status(400).json({
+                success: false,
+                message: "Please ensure your pet profile has at least 2 photos."
+            });
+        }
+
+        // Update fields
+        if (petName) pet.petName = petName;
+        if (breed) pet.breed = breed;
+        if (gender) pet.gender = gender;
+        if (age) pet.age = age;
+        if (temperament) pet.temperament = temperament;
+        if (goal) pet.goal = goal;
+        
+        if (healthBadges || healthBadge) {
+            pet.healthBadges = parsedHealthBadges;
+            pet.healthBadge = parsedHealthBadges[0] || "";
+        }
+
+        pet.images = combinedImages;
+        await pet.save();
+
+        res.status(200).json({
+            success: true,
+            message: "Pet profile updated successfully",
+            pet,
+        });
+
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+
 // Get user's pets
 exports.getMyPets = async (req, res) => {
     try {
