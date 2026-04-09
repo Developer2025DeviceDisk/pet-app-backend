@@ -8,6 +8,7 @@ const { Server } = require("socket.io");
 const connectDB = require("./src/config/db.js");
 const indexRouter = require("./src/routes/index");
 const Message = require("./src/models/message");
+const Match = require("./src/models/match");
 
 const app = express();
 const server = http.createServer(app);
@@ -41,6 +42,12 @@ io.on("connection", (socket) => {
       // data: { matchId, senderId, content, mediaUrl?, mediaType? }
       const { matchId, senderId, content, mediaUrl, mediaType } = data;
 
+      const match = await Match.findById(matchId).select("blockedBy").lean();
+      let hiddenFrom = null;
+      if (match?.blockedBy && match.blockedBy.toString() !== senderId.toString()) {
+          hiddenFrom = match.blockedBy;
+      }
+
       // Save message to database
       const newMessage = new Message({
         match: matchId,
@@ -48,6 +55,7 @@ io.on("connection", (socket) => {
         content: content || "",
         mediaUrl: mediaUrl || null,
         mediaType: mediaType || null,
+        hiddenFrom
       });
       await newMessage.save();
 
@@ -61,6 +69,7 @@ io.on("connection", (socket) => {
         mediaType: mediaType || null,
         clientId: data.clientId,
         createdAt: newMessage.createdAt,
+        hiddenFrom: hiddenFrom
       });
     } catch (error) {
       console.error("Error saving message:", error);

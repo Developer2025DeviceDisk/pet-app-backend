@@ -5,13 +5,24 @@ const path = require("path");
 exports.getMessages = async (req, res) => {
     try {
         const { matchId } = req.params;
-        const messages = await Message.find({ match: matchId }).sort({ createdAt: 1 });
+        const userId = req.user.id;
+        
+        const messages = await Message.find({ 
+            match: matchId,
+            hiddenFrom: { $ne: userId }
+        }).sort({ createdAt: 1 });
+        
         const match = await Match.findById(matchId).select("blockedBy").lean();
+
+        let returnedBlockedBy = null;
+        if (match?.blockedBy && match.blockedBy.toString() === userId.toString()) {
+            returnedBlockedBy = match.blockedBy;
+        }
 
         res.status(200).json({
             success: true,
             messages,
-            blockedBy: match?.blockedBy || null,
+            blockedBy: returnedBlockedBy,
         });
     } catch (error) {
         console.error("Error fetching messages:", error);
@@ -94,10 +105,11 @@ exports.sendMediaMessage = async (req, res) => {
             return res.status(400).json({ success: false, message: "No media file provided" });
         }
 
-        // Prevent blocked users from sending media
         const match = await Match.findById(matchId).select("blockedBy").lean();
-        if (match?.blockedBy) {
-            return res.status(403).json({ success: false, message: "Cannot send media: user is blocked" });
+        
+        let hiddenFrom = null;
+        if (match?.blockedBy && match.blockedBy.toString() !== senderId.toString()) {
+            hiddenFrom = match.blockedBy;
         }
 
         const ext = path.extname(req.file.originalname).toLowerCase();
@@ -111,6 +123,7 @@ exports.sendMediaMessage = async (req, res) => {
             content: "",
             mediaUrl,
             mediaType,
+            hiddenFrom
         });
 
         const io = req.app.get("socketio");
@@ -123,6 +136,7 @@ exports.sendMediaMessage = async (req, res) => {
                 mediaUrl: mediaUrl,
                 mediaType: mediaType,
                 createdAt: message.createdAt,
+                hiddenFrom: hiddenFrom,
             });
         }
 

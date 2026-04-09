@@ -25,6 +25,11 @@ const messageSchema = new mongoose.Schema(
             enum: ["image", "video", null],
             default: null,
         },
+        hiddenFrom: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            default: null,
+        },
     },
     { timestamps: true }
 );
