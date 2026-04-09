@@ -20,6 +20,11 @@ const matchSchema = new mongoose.Schema(
             type: String,
             enum: ["Find Mate", "Play Date"],
             required: true,
+        },
+        blockedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            default: null,
         }
     },
     { timestamps: true }

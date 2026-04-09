@@ -1,14 +1,17 @@
 const Message = require("../models/message");
+const Match = require("../models/match");
 const path = require("path");
 
 exports.getMessages = async (req, res) => {
     try {
         const { matchId } = req.params;
         const messages = await Message.find({ match: matchId }).sort({ createdAt: 1 });
+        const match = await Match.findById(matchId).select("blockedBy").lean();
 
         res.status(200).json({
             success: true,
-            messages
+            messages,
+            blockedBy: match?.blockedBy || null,
         });
     } catch (error) {
         console.error("Error fetching messages:", error);
@@ -16,6 +19,64 @@ exports.getMessages = async (req, res) => {
             success: false,
             message: "Internal server error"
         });
+    }
+};
+
+// Block a user in this match
+exports.blockUser = async (req, res) => {
+    try {
+        const { matchId } = req.params;
+        const userId = req.user.id;
+
+        const match = await Match.findById(matchId);
+        if (!match) {
+            return res.status(404).json({ success: false, message: "Match not found" });
+        }
+
+        // Only participants can block
+        const isParticipant = match.users.some(u => u.toString() === userId.toString());
+        if (!isParticipant) {
+            return res.status(403).json({ success: false, message: "Not authorized" });
+        }
+
+        // Already blocked
+        if (match.blockedBy) {
+            return res.status(400).json({ success: false, message: "Already blocked" });
+        }
+
+        match.blockedBy = userId;
+        await match.save();
+
+        res.status(200).json({ success: true, message: "User blocked", blockedBy: userId });
+    } catch (error) {
+        console.error("Error blocking user:", error);
+        res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
+
+// Unblock a user in this match
+exports.unblockUser = async (req, res) => {
+    try {
+        const { matchId } = req.params;
+        const userId = req.user.id;
+
+        const match = await Match.findById(matchId);
+        if (!match) {
+            return res.status(404).json({ success: false, message: "Match not found" });
+        }
+
+        // Only the person who blocked can unblock
+        if (!match.blockedBy || match.blockedBy.toString() !== userId.toString()) {
+            return res.status(403).json({ success: false, message: "You are not the one who blocked this user" });
+        }
+
+        match.blockedBy = null;
+        await match.save();
+
+        res.status(200).json({ success: true, message: "User unblocked", blockedBy: null });
+    } catch (error) {
+        console.error("Error unblocking user:", error);
+        res.status(500).json({ success: false, message: "Internal server error" });
     }
 };
 
@@ -31,6 +92,12 @@ exports.sendMediaMessage = async (req, res) => {
 
         if (!req.file) {
             return res.status(400).json({ success: false, message: "No media file provided" });
+        }
+
+        // Prevent blocked users from sending media
+        const match = await Match.findById(matchId).select("blockedBy").lean();
+        if (match?.blockedBy) {
+            return res.status(403).json({ success: false, message: "Cannot send media: user is blocked" });
         }
 
         const ext = path.extname(req.file.originalname).toLowerCase();
