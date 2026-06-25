@@ -7,6 +7,7 @@ const http = require("http");
 const { Server } = require("socket.io");
 const connectDB = require("./src/config/db.js");
 const indexRouter = require("./src/routes/index");
+const errorHandler = require("./src/middlewares/error");
 const Message = require("./src/models/message");
 const Match = require("./src/models/match");
 
@@ -27,6 +28,10 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 connectDB();
 app.use("/api", indexRouter);
+
+// Global error handler (must be registered after routes) — returns JSON for
+// errors thrown in middleware such as multer upload rejections.
+app.use(errorHandler);
 
 // Socket.io Connection
 io.on("connection", (socket) => {

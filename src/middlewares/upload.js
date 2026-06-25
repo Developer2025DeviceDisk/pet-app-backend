@@ -19,14 +19,16 @@ const storage = multer.diskStorage({
 
 // For pet profile images only (strict images)
 const imageFileFilter = (req, file, cb) => {
-    const filetypes = /jpeg|jpg|png|webp/;
+    // Accept common image extensions including iOS HEIC/HEIF.
+    const filetypes = /jpeg|jpg|png|webp|heic|heif/;
     const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = filetypes.test(file.mimetype);
-    if (mimetype && extname) {
+    // React Native uploads can send a generic mimetype, so accept any image/* too.
+    const mimetype = (file.mimetype || "").startsWith("image/");
+    if (extname || mimetype) {
         return cb(null, true);
-    } else {
-        cb('Error: Images Only!');
     }
+    // Pass a real Error so the global error handler can report it as JSON.
+    cb(new Error("Only image files (jpg, png, webp, heic) are allowed"));
 };
 
 // For chat media (images + videos)

@@ -2,6 +2,8 @@ const User = require("../models/user");
 const Match = require("../models/match");
 const Pet = require("../models/pet");
 const Message = require("../models/message");
+const Like = require("../models/like");
+const Dislike = require("../models/dislike");
 
 // Update User Profile (Owner Details)
 exports.updateProfile = async (req, res) => {
@@ -71,6 +73,48 @@ exports.getMatches = async (req, res) => {
         }));
 
         res.status(200).json({ success: true, matches: matchesWithMessages });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// Permanently delete the current user's account and all associated data.
+// Required by App Store Guideline 5.1.1(v): account deletion must remove the
+// account and its data, not merely deactivate it.
+exports.deleteAccount = async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        // Pets owned by this user (used to clean up swipes against them)
+        const myPets = await Pet.find({ owner: userId }).select("_id");
+        const myPetIds = myPets.map((p) => p._id);
+
+        // Matches the user is part of
+        const myMatches = await Match.find({ users: userId }).select("_id");
+        const myMatchIds = myMatches.map((m) => m._id);
+
+        // Messages in those matches, plus any sent by the user
+        await Message.deleteMany({
+            $or: [{ match: { $in: myMatchIds } }, { sender: userId }],
+        });
+
+        // The matches themselves
+        await Match.deleteMany({ users: userId });
+
+        // Swipes made by the user, and swipes made by others on the user's pets
+        await Like.deleteMany({ $or: [{ user: userId }, { pet: { $in: myPetIds } }] });
+        await Dislike.deleteMany({ $or: [{ user: userId }, { pet: { $in: myPetIds } }] });
+
+        // The user's pets
+        await Pet.deleteMany({ owner: userId });
+
+        // Finally, the user record
+        await User.findByIdAndDelete(userId);
+
+        res.status(200).json({
+            success: true,
+            message: "Account deleted successfully",
+        });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
