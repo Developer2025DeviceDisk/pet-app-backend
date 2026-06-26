@@ -1,6 +1,11 @@
 const User = require("../models/user.js");
 const { generateToken } = require("../utils/jwt");
 
+// Demo account for App Store / Play Store review (reviewers cannot receive a
+// real SMS OTP). This phone number always uses the fixed OTP below.
+const REVIEW_PHONE = "9555942520";
+const REVIEW_OTP = "123456";
+
 // 🔐 Generate Random 6-digit OTP
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -21,8 +26,8 @@ exports.register = async (req, res) => {
       user = await User.create({ phone });
     }
 
-    // Generate OTP
-    const otp = generateOTP();
+    // Generate OTP (fixed for the review account)
+    const otp = phone === REVIEW_PHONE ? REVIEW_OTP : generateOTP();
     const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
 
     user.otp = otp;
@@ -49,6 +54,22 @@ exports.login = exports.register;
 exports.verifyOtp = async (req, res) => {
   try {
     const { phone, otp } = req.body;
+
+    // Review account: accept the fixed OTP regardless of expiry so reviewers
+    // can always log in.
+    if (phone === REVIEW_PHONE && otp === REVIEW_OTP) {
+      let reviewUser = await User.findOne({ phone });
+      if (!reviewUser) {
+        reviewUser = await User.create({ phone });
+      }
+      reviewUser.otp = undefined;
+      reviewUser.otpExpires = undefined;
+      reviewUser.isVerified = true;
+      await reviewUser.save();
+
+      const reviewToken = generateToken(reviewUser._id);
+      return res.status(200).json({ success: true, token: reviewToken, user: reviewUser });
+    }
 
     const user = await User.findOne({
       phone,
@@ -89,7 +110,7 @@ exports.resendOtp = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const otp = generateOTP();
+    const otp = phone === REVIEW_PHONE ? REVIEW_OTP : generateOTP();
     user.otp = otp;
     user.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
     await user.save();
