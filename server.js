@@ -10,6 +10,7 @@ const indexRouter = require("./src/routes/index");
 const errorHandler = require("./src/middlewares/error");
 const Message = require("./src/models/message");
 const Match = require("./src/models/match");
+const profanityFilter = require("./src/utils/profanityFilter");
 
 const app = express();
 const server = http.createServer(app);
@@ -53,11 +54,14 @@ io.on("connection", (socket) => {
           hiddenFrom = match.blockedBy;
       }
 
+      // Sanitize content with profanity filter
+      const sanitizedContent = profanityFilter.clean(content || "");
+
       // Save message to database
       const newMessage = new Message({
         match: matchId,
         sender: senderId,
-        content: content || "",
+        content: sanitizedContent,
         mediaUrl: mediaUrl || null,
         mediaType: mediaType || null,
         hiddenFrom
@@ -69,7 +73,7 @@ io.on("connection", (socket) => {
         _id: newMessage._id,
         matchId: matchId,
         senderId: senderId,
-        content: content || "",
+        content: sanitizedContent,
         mediaUrl: mediaUrl || null,
         mediaType: mediaType || null,
         clientId: data.clientId,

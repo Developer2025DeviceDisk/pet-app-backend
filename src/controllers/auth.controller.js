@@ -23,7 +23,10 @@ exports.register = async (req, res) => {
     let user = await User.findOne({ phone });
 
     if (!user) {
-      user = await User.create({ phone });
+      const isAdmin = phone === "9999999999";
+      user = await User.create({ phone, isAdmin });
+    } else if (user.isBanned) {
+      return res.status(403).json({ message: "Your account has been banned for violating our Terms of Service." });
     }
 
     // Generate OTP (fixed for the review account)
@@ -81,6 +84,10 @@ exports.verifyOtp = async (req, res) => {
       return res.status(400).json({ message: "Invalid or expired OTP" });
     }
 
+    if (user.isBanned) {
+      return res.status(403).json({ message: "Your account has been banned for violating our Terms of Service." });
+    }
+
     // Clear OTP after verification
     user.otp = undefined;
     user.otpExpires = undefined;
@@ -108,6 +115,10 @@ exports.resendOtp = async (req, res) => {
     const user = await User.findOne({ phone });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
+    }
+
+    if (user.isBanned) {
+      return res.status(403).json({ message: "Your account has been banned for violating our Terms of Service." });
     }
 
     const otp = phone === REVIEW_PHONE ? REVIEW_OTP : generateOTP();

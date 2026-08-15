@@ -16,6 +16,10 @@ const auth = async (req, res, next) => {
             return res.status(401).json({ message: "Token verification failed, user not found" });
         }
 
+        if (user.isBanned) {
+            return res.status(403).json({ message: "Your account has been banned for violating our Terms of Service." });
+        }
+
         req.user = user;
         req.token = token;
         next();

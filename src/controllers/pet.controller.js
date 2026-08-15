@@ -2,6 +2,8 @@ const Pet = require("../models/pet");
 const Like = require("../models/like");
 const Match = require("../models/match");
 const Dislike = require("../models/dislike");
+const fs = require('fs');
+const { verifyIsDogImage } = require("../utils/aiVerifier");
 
 // Create Pet Profile
 exports.createPetProfile = async (req, res) => {
@@ -15,6 +17,22 @@ exports.createPetProfile = async (req, res) => {
                 success: false,
                 message: "Please upload at least 2 photos of your pet."
             });
+        }
+
+        // AI Image Verification
+        if (req.files && req.files.length > 0) {
+            for (const file of req.files) {
+                const isDog = await verifyIsDogImage(file.path);
+                if (!isDog) {
+                    req.files.forEach(f => {
+                        if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
+                    });
+                    return res.status(400).json({
+                        success: false,
+                        message: "This is not a dog image. Please upload a proper image of a dog."
+                    });
+                }
+            }
         }
 
         // Parse healthBadges: can be JSON string or comma-separated or array
@@ -102,6 +120,23 @@ exports.updatePetProfile = async (req, res) => {
 
         // Combine existing and new images
         const newImages = req.files ? req.files.map(file => `/uploads/${file.filename}`) : [];
+
+        // AI Image Verification for new images
+        if (req.files && req.files.length > 0) {
+            for (const file of req.files) {
+                const isDog = await verifyIsDogImage(file.path);
+                if (!isDog) {
+                    req.files.forEach(f => {
+                        if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
+                    });
+                    return res.status(400).json({
+                        success: false,
+                        message: "This is not a dog image. Please upload a proper image of a dog."
+                    });
+                }
+            }
+        }
+
         const combinedImages = [...parsedExistingImages, ...newImages];
 
         // Ensure minimum 2 images total
