@@ -5,6 +5,33 @@ const Dislike = require("../models/dislike");
 const fs = require('fs');
 const { verifyIsDogImage } = require("../utils/aiVerifier");
 
+// Verify a single image immediately (called from frontend on image pick)
+exports.verifyImage = async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ success: false, message: "No image uploaded." });
+    }
+    try {
+        const isDog = await verifyIsDogImage(req.file.path);
+        // Always clean up the temporary file after verification
+        if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+
+        if (isDog) {
+            return res.status(200).json({ success: true, isDog: true });
+        } else {
+            return res.status(200).json({
+                success: true,
+                isDog: false,
+                message: "This is not a dog image. Please upload a proper dog image."
+            });
+        }
+    } catch (error) {
+        if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        console.error("verifyImage error:", error.message);
+        // On API failure, allow the image (don't block the user)
+        return res.status(200).json({ success: true, isDog: true, warning: "AI verification skipped." });
+    }
+};
+
 // Create Pet Profile
 exports.createPetProfile = async (req, res) => {
     try {

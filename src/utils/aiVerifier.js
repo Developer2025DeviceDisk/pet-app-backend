@@ -1,67 +1,119 @@
 const fs = require('fs');
 const path = require('path');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-
-// Initialize the Google Generative AI with the API key from environment variables
-// Note: It's better to initialize this inside the function or lazily if dotenv isn't loaded yet.
-// We'll initialize lazily to ensure process.env.GEMINI_API_KEY is available.
-let genAI = null;
+const https = require('https');
 
 /**
- * Verifies if the given image contains a dog using Gemini AI.
- * @param {string} filePath - The absolute or relative path to the image file.
+ * Verifies if the given image contains a dog using Gemini AI REST API.
+ * @param {string} filePath - The path to the image file.
  * @returns {Promise<boolean>} - Returns true if a dog is found, false otherwise.
  */
 async function verifyIsDogImage(filePath) {
-    if (!process.env.GEMINI_API_KEY) {
-        console.warn("GEMINI_API_KEY is not set. Skipping AI verification.");
-        return true; // Bypass if key is missing (optional fallback)
-    }
+    const apiKey = process.env.GEMINI_API_KEY;
 
-    if (!genAI) {
-        genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    if (!apiKey) {
+        console.warn("GEMINI_API_KEY is not set. Skipping AI verification.");
+        return true;
     }
 
     try {
         // Read file and convert to base64
         const fileBytes = fs.readFileSync(filePath);
         const base64Data = fileBytes.toString("base64");
-
         const mimeType = getMimeType(filePath);
 
-        // Get the model (using 1.5 flash for fast multimodal tasks)
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const requestBody = JSON.stringify({
+            contents: [
+                {
+                    parts: [
+                        {
+                            text: "Does this image contain a dog or a puppy? Look carefully. Answer with only the single word YES or NO."
+                        },
+                        {
+                            inline_data: {
+                                mime_type: mimeType,
+                                data: base64Data
+                            }
+                        }
+                    ]
+                }
+            ]
+        });
 
-        const prompt = "Does this image contain a dog? Answer with only 'YES' or 'NO'.";
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
 
-        const imagePart = {
-            inlineData: {
-                data: base64Data,
-                mimeType
-            }
-        };
+        const responseText = await httpPost(apiUrl, requestBody);
+        const parsed = JSON.parse(responseText);
 
-        const result = await model.generateContent([prompt, imagePart]);
-        const response = await result.response;
-        const text = response.text().trim().toUpperCase();
+        // Extract the text response
+        const text = parsed?.candidates?.[0]?.content?.parts?.[0]?.text?.trim()?.toUpperCase() || "";
 
-        // Check if the response contains 'YES'
+        console.log(`AI verification response for ${path.basename(filePath)}: "${text}"`);
+
         if (text.includes("YES")) {
             return true;
-        } else {
+        } else if (text.includes("NO")) {
             return false;
+        } else {
+            // If ambiguous response, log and allow the upload
+            console.warn("Ambiguous AI response:", text, "- allowing upload.");
+            return true;
         }
 
     } catch (error) {
-        console.error("Error during AI image verification:", error);
-        // Let it pass if AI fails, or block it. Usually safer to throw error if strict.
-        // We will throw error so the controller handles it.
-        throw new Error("Failed to verify image content with AI. Please try again later.");
+        console.error("AI verification error details:", error.message || error);
+        // If the AI verification fails due to a network/API error, log it but allow
+        // the upload to avoid blocking users due to transient API issues.
+        // Change to 'throw error' if you want strict blocking.
+        console.warn("AI verification failed - allowing upload due to API error.");
+        return true;
     }
 }
 
 /**
- * Basic mime-type helper based on extension.
+ * Helper to make an HTTPS POST request.
+ */
+function httpPost(url, body) {
+    return new Promise((resolve, reject) => {
+        const urlObj = new URL(url);
+        const options = {
+            hostname: urlObj.hostname,
+            path: urlObj.pathname + urlObj.search,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(body)
+            }
+        };
+
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => {
+                if (res.statusCode >= 200 && res.statusCode < 300) {
+                    resolve(data);
+                } else {
+                    console.error("Gemini API HTTP error:", res.statusCode, data);
+                    reject(new Error(`Gemini API returned status ${res.statusCode}: ${data}`));
+                }
+            });
+        });
+
+        req.on('error', (err) => {
+            reject(err);
+        });
+
+        req.setTimeout(30000, () => {
+            req.destroy();
+            reject(new Error("Request to Gemini API timed out after 30s"));
+        });
+
+        req.write(body);
+        req.end();
+    });
+}
+
+/**
+ * Basic mime-type helper based on file extension.
  */
 function getMimeType(filePath) {
     const ext = path.extname(filePath).toLowerCase();

@@ -10,5 +10,6 @@ router.get("/", auth, petController.getAllPets);
 router.get("/my-pets", auth, petController.getMyPets);
 router.post("/like", auth, petController.likePet);
 router.post("/dislike", auth, petController.dislikePet);
+router.post("/verify-image", auth, upload.single("image"), petController.verifyImage);
 
 module.exports = router;
