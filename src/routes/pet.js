@@ -3,6 +3,8 @@ const router = express.Router();
 const petController = require("../controllers/pet.controller");
 const auth = require("../middlewares/auth");
 const upload = require("../middlewares/upload");
+router.post('/invite', auth, require('../controllers/invitation.controller').invite);
+router.get('/discover', auth, require('../services/discovery').discover);
 
 router.post("/", auth, upload.array("images", 5), petController.createPetProfile);
 router.put("/:id", auth, upload.array("images", 5), petController.updatePetProfile);

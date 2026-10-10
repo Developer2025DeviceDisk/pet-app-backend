@@ -15,8 +15,9 @@ const auth = async (req, res, next) => {
         if (!user) {
             return res.status(401).json({ message: "Token verification failed, user not found" });
         }
+        if ((decoded.tokenVersion || 0) !== (user.tokenVersion || 0)) return res.status(401).json({ message: 'Session expired. Please sign in again.' });
 
-        if (user.isBanned) {
+        if ((!user.isVerified && user.authMethod !== 'password') || user.isBanned) {
             return res.status(403).json({ message: "Your account has been banned for violating our Terms of Service." });
         }
 

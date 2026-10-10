@@ -1,19 +1,23 @@
 const Message = require("../models/message");
 const Match = require("../models/match");
 const path = require("path");
+const fs = require('fs');
+const { isParticipant } = require('../services/chatSocket');
 
 exports.getMessages = async (req, res) => {
     try {
         const { matchId } = req.params;
         const userId = req.user.id;
+        const match = await Match.findById(matchId).select('users blockedBy').lean();
+        if (!isParticipant(match, userId)) {
+            return res.status(403).json({ success: false, message: 'Not authorized' });
+        }
         
         const messages = await Message.find({ 
             match: matchId,
             hiddenFrom: { $ne: userId }
         }).sort({ createdAt: 1 });
         
-        const match = await Match.findById(matchId).select("blockedBy").lean();
-
         let returnedBlockedBy = null;
         if (match?.blockedBy && match.blockedBy.toString() === userId.toString()) {
             returnedBlockedBy = match.blockedBy;
@@ -105,7 +109,11 @@ exports.sendMediaMessage = async (req, res) => {
             return res.status(400).json({ success: false, message: "No media file provided" });
         }
 
-        const match = await Match.findById(matchId).select("blockedBy").lean();
+        const match = await Match.findById(matchId).select('users blockedBy').lean();
+        if (!isParticipant(match, senderId) || match.blockedBy) {
+            await fs.promises.unlink(req.file.path).catch(() => {});
+            return res.status(403).json({ success: false, message: 'Conversation unavailable' });
+        }
         
         let hiddenFrom = null;
         if (match?.blockedBy && match.blockedBy.toString() !== senderId.toString()) {

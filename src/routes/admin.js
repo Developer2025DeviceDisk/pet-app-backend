@@ -5,7 +5,8 @@ const auth = require("../middlewares/auth");
 
 // Middleware to verify admin privileges
 const adminAuth = (req, res, next) => {
-  if (req.user && req.user.isAdmin) {
+  const allowed = (process.env.ADMIN_USER_IDS || '').split(',').map(value => value.trim());
+  if (req.user && req.user.isAdmin && allowed.includes(String(req.user._id))) {
     next();
   } else {
     res.status(403).json({ message: "Access denied. Admin privileges required." });

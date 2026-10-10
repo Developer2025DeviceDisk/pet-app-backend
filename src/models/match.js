@@ -2,6 +2,8 @@ const mongoose = require("mongoose");
 
 const matchSchema = new mongoose.Schema(
     {
+        invitationKey: { type: String, unique: true, sparse: true },
+        invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         users: [
             {
                 type: mongoose.Schema.Types.ObjectId,

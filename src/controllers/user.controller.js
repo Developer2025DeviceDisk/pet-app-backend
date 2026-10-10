@@ -13,10 +13,13 @@ exports.updateProfile = async (req, res) => {
 
         const updateData = {
             fullName,
-            email,
             state,
             city
         };
+        const latitude = Number(req.body.latitude), longitude = Number(req.body.longitude);
+        if (req.body.latitude !== undefined && req.body.longitude !== undefined && Number.isFinite(latitude) && Number.isFinite(longitude) && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180) {
+            updateData.latitude = latitude; updateData.longitude = longitude;
+        }
 
         if (req.file) {
             updateData.profileImage = `/uploads/${req.file.filename}`;
@@ -86,12 +89,22 @@ exports.deleteAccount = async (req, res) => {
         const userId = req.user.id;
 
         // Pets owned by this user (used to clean up swipes against them)
-        const myPets = await Pet.find({ owner: userId }).select("_id");
+        const myPets = await Pet.find({ owner: userId }).select('_id images');
         const myPetIds = myPets.map((p) => p._id);
 
         // Matches the user is part of
         const myMatches = await Match.find({ users: userId }).select("_id");
         const myMatchIds = myMatches.map((m) => m._id);
+        const media = await Message.find({ $or: [{ match: { $in: myMatchIds } }, { sender: userId }] }).select('mediaUrl').lean();
+        const files = [...myPets.flatMap(pet => pet.images || []), req.user.profileImage, ...media.map(message => message.mediaUrl)].filter(Boolean);
+        const path = require('path'), fs = require('fs');
+        const root = require('../config/storage').uploads;
+        for (const uri of files) {
+            if (!String(uri).startsWith('/uploads/')) continue;
+            const file = path.resolve(root, String(uri).slice('/uploads/'.length));
+            if (path.dirname(file) !== root) continue;
+            await fs.promises.unlink(file).catch(error => { if (error.code !== 'ENOENT') throw error; });
+        }
 
         // Messages in those matches, plus any sent by the user
         await Message.deleteMany({

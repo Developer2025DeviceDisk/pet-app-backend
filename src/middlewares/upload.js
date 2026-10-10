@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 
 // Ensure uploads directory exists
-const uploadDir = 'uploads/';
+const uploadDir = require('../config/storage').uploads;
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
@@ -13,14 +13,14 @@ const storage = multer.diskStorage({
         cb(null, uploadDir);
     },
     filename: function (req, file, cb) {
-        cb(null, `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`);
+        cb(null, `${file.fieldname}-${require('crypto').randomUUID()}${path.extname(file.originalname).toLowerCase()}`);
     }
 });
 
 // For pet profile images only (strict images)
 const imageFileFilter = (req, file, cb) => {
     // Accept common image extensions including iOS HEIC/HEIF.
-    const filetypes = /jpeg|jpg|png|webp|heic|heif/;
+    const filetypes = /^\.(jpeg|jpg|png|webp|heic|heif)$/;
     const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
     // React Native uploads can send a generic mimetype, so accept any image/* too.
     const mimetype = (file.mimetype || "").startsWith("image/");

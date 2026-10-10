@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 
 const messageSchema = new mongoose.Schema(
     {
+        clientId: { type: String },
         match: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Match",
@@ -33,5 +34,6 @@ const messageSchema = new mongoose.Schema(
     },
     { timestamps: true }
 );
+messageSchema.index({ match: 1, sender: 1, clientId: 1 }, { unique: true, partialFilterExpression: { clientId: { $type: 'string' } } });
 
 module.exports = mongoose.model("Message", messageSchema);

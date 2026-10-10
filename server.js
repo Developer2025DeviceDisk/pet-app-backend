@@ -25,7 +25,7 @@ app.set("socketio", io);
 
 app.use(cors());
 app.use(express.json());
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use("/uploads", express.static(require('./src/config/storage').uploads, { dotfiles: 'deny', setHeaders: res => res.setHeader('X-Content-Type-Options', 'nosniff') }));
 
 connectDB();
 app.use("/api", indexRouter);
@@ -34,61 +34,11 @@ app.use("/api", indexRouter);
 // errors thrown in middleware such as multer upload rejections.
 app.use(errorHandler);
 
-// Socket.io Connection
-io.on("connection", (socket) => {
-  console.log("A user connected:", socket.id);
-
-  socket.on("join_room", (matchId) => {
-    socket.join(matchId);
-    console.log(`User ${socket.id} joined room ${matchId}`);
-  });
-
-  socket.on("send_message", async (data) => {
-    try {
-      // data: { matchId, senderId, content, mediaUrl?, mediaType? }
-      const { matchId, senderId, content, mediaUrl, mediaType } = data;
-
-      const match = await Match.findById(matchId).select("blockedBy").lean();
-      let hiddenFrom = null;
-      if (match?.blockedBy && match.blockedBy.toString() !== senderId.toString()) {
-          hiddenFrom = match.blockedBy;
-      }
-
-      // Sanitize content with profanity filter
-      const sanitizedContent = profanityFilter.clean(content || "");
-
-      // Save message to database
-      const newMessage = new Message({
-        match: matchId,
-        sender: senderId,
-        content: sanitizedContent,
-        mediaUrl: mediaUrl || null,
-        mediaType: mediaType || null,
-        hiddenFrom
-      });
-      await newMessage.save();
-
-      // Broadcast with saved message data (includes timestamps)
-      io.to(matchId).emit("receive_message", {
-        _id: newMessage._id,
-        matchId: matchId,
-        senderId: senderId,
-        content: sanitizedContent,
-        mediaUrl: mediaUrl || null,
-        mediaType: mediaType || null,
-        clientId: data.clientId,
-        createdAt: newMessage.createdAt,
-        hiddenFrom: hiddenFrom
-      });
-    } catch (error) {
-      console.error("Error saving message:", error);
-    }
-  });
-
-  socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.id);
-  });
-});
+// Authenticate every socket and authorize each conversation operation.
+require('./src/services/chatSocket').configureChat(io);
+if (process.env.REFERRAL_REMINDERS_ENABLED === 'true') {
+  setInterval(() => require('./src/services/rewards').sendReminders().catch(() => {}), 86400000).unref();
+}
 
 const PORT = process.env.PORT || 5000;
 

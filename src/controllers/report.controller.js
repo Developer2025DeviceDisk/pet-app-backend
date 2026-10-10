@@ -1,9 +1,17 @@
 const Report = require("../models/report");
 const { logEvent } = require("../utils/moderatorLogger");
+const Message = require('../models/message');
+const Match = require('../models/match');
+const { isParticipant } = require('../services/chatSocket');
 
 exports.reportMessage = async (req, res) => {
   try {
-    const { messageId, reporterId, senderId, reason, optionalDescription, createdAt } = req.body;
+    const { messageId, reason, optionalDescription } = req.body;
+    const reporterId = req.user._id;
+    const message = await Message.findById(messageId);
+    const match = message && await Match.findById(message.match);
+    if (!isParticipant(match, reporterId) || String(message.sender) === String(reporterId)) return res.status(403).json({ success: false, message: 'Not authorized' });
+    const senderId = message.sender;
 
     if (!messageId || !reporterId || !senderId || !reason) {
       return res.status(400).json({ success: false, message: "Missing required fields" });
@@ -16,7 +24,7 @@ exports.reportMessage = async (req, res) => {
       reportType: "message",
       reason: reason,
       optionalDescription: optionalDescription || "",
-      createdAt: createdAt || new Date()
+      createdAt: new Date()
     });
 
     await report.save();
